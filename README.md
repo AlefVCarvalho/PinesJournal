@@ -1,13 +1,13 @@
 # Pine's Journal
 
-gerenciador desktop local de tarefas em Python + Tkinter + SQLite.
+A base de tarefas foi expandida com datas, calendário e regras de vencimento.
 
-## Incluído
-- criação de tarefas;
-- lista de tarefas;
-- marcar como concluída;
-- exclusão;
-- persistência local em SQLite.
+## Novidades
+- data de conclusão opcional;
+- calendário mensal;
+- tarefas agrupadas por dia;
+- destaque de tarefas atrasadas;
+- exclusão automática de concluídas após 7 dias.
 
 ## Executar
 ```powershell
