@@ -902,6 +902,9 @@ class TaskApp(BorderlessMixin, tk.Tk):
         self.scratch_next_text_id = 1
         self.scratch_active_id = None
         self.scratch_canvas = None
+        self.scratch_cursor_photo = None
+        self.scratch_cursor_item = None
+        self.scratch_cursor_inside = False
         self.scratch_text_entry = None
         self.scratch_text_window = None
         self.scratch_tool_buttons = {}
@@ -1108,6 +1111,8 @@ class TaskApp(BorderlessMixin, tk.Tk):
         for child in self.content.winfo_children():
             child.destroy()
         self.scratch_canvas = None
+        self.scratch_cursor_item = None
+        self.scratch_cursor_inside = False
         self.scratch_text_entry = None
         self.scratch_text_window = None
 
@@ -1576,21 +1581,102 @@ class TaskApp(BorderlessMixin, tk.Tk):
 
         paper = tk.Frame(self.content, bg=COLORS["panel"], highlightbackground=COLORS["border"], highlightthickness=1)
         paper.pack(fill="both", expand=True, padx=14, pady=(0, 14))
-        self.scratch_canvas = tk.Canvas(paper, bg="#fffef8", highlightthickness=0, cursor="pencil")
+        self.scratch_canvas = tk.Canvas(paper, bg="#fffef8", highlightthickness=0, cursor="none")
         self.scratch_canvas.pack(fill="both", expand=True, padx=5, pady=5)
         self.scratch_canvas.bind("<ButtonPress-1>", self._scratch_press)
         self.scratch_canvas.bind("<B1-Motion>", self._scratch_move)
         self.scratch_canvas.bind("<ButtonRelease-1>", self._scratch_release)
+        self.scratch_canvas.bind("<Motion>", self._scratch_hover_move)
+        self.scratch_canvas.bind("<Enter>", self._scratch_enter)
+        self.scratch_canvas.bind("<Leave>", self._scratch_leave)
         self.after_idle(self._redraw_scratch)
 
     def _set_scratch_tool(self, tool):
         self._commit_scratch_text_entry()
         self.scratch_tool = tool
         self.scratch_active_id = None
-        if self.scratch_canvas:
-            cursors = {"brush": "pencil", "eraser": "dotbox", "text": "xterm"}
-            self.scratch_canvas.configure(cursor=cursors.get(tool, "arrow"))
+        self._apply_scratch_cursor()
         self._update_scratch_tool_buttons()
+
+    def _load_scratch_cursor_photo(self):
+        path = asset_path("cursor_brush.png")
+        if not path.exists():
+            return None
+        try:
+            image = Image.open(path).convert("RGBA")
+            return ImageTk.PhotoImage(image)
+        except Exception:
+            return None
+
+    def _ensure_scratch_cursor_item(self):
+        if not self.scratch_canvas or not self.scratch_canvas.winfo_exists():
+            return
+        if self.scratch_cursor_photo is None:
+            self.scratch_cursor_photo = self._load_scratch_cursor_photo()
+        if self.scratch_cursor_photo is None:
+            return
+        create_new = False
+        if self.scratch_cursor_item is None:
+            create_new = True
+        else:
+            try:
+                self.scratch_canvas.type(self.scratch_cursor_item)
+            except tk.TclError:
+                create_new = True
+        if create_new:
+            self.scratch_cursor_item = self.scratch_canvas.create_image(
+                -100, -100, image=self.scratch_cursor_photo, anchor="center",
+                tags=("cursor_overlay",)
+            )
+
+    def _apply_scratch_cursor(self):
+        if not self.scratch_canvas or not self.scratch_canvas.winfo_exists():
+            return
+        if self.scratch_tool == "brush":
+            self._ensure_scratch_cursor_item()
+            if self.scratch_cursor_photo is not None:
+                self.scratch_canvas.configure(cursor="none")
+                if self.scratch_cursor_item is not None:
+                    state = "normal" if self.scratch_cursor_inside else "hidden"
+                    try:
+                        self.scratch_canvas.itemconfigure(self.scratch_cursor_item, state=state)
+                    except tk.TclError:
+                        pass
+                return
+        cursors = {"eraser": "dotbox", "text": "xterm"}
+        self.scratch_canvas.configure(cursor=cursors.get(self.scratch_tool, "arrow"))
+        if self.scratch_cursor_item is not None:
+            try:
+                self.scratch_canvas.itemconfigure(self.scratch_cursor_item, state="hidden")
+            except tk.TclError:
+                pass
+
+    def _move_scratch_cursor(self, x, y):
+        if self.scratch_tool != "brush":
+            return
+        self._ensure_scratch_cursor_item()
+        if self.scratch_cursor_item is not None:
+            try:
+                self.scratch_canvas.coords(self.scratch_cursor_item, x, y)
+                self.scratch_canvas.itemconfigure(self.scratch_cursor_item, state="normal" if self.scratch_cursor_inside else "hidden")
+            except tk.TclError:
+                pass
+
+    def _scratch_enter(self, event):
+        self.scratch_cursor_inside = True
+        self._apply_scratch_cursor()
+        self._move_scratch_cursor(event.x, event.y)
+
+    def _scratch_leave(self, _event):
+        self.scratch_cursor_inside = False
+        if self.scratch_cursor_item is not None and self.scratch_canvas:
+            try:
+                self.scratch_canvas.itemconfigure(self.scratch_cursor_item, state="hidden")
+            except tk.TclError:
+                pass
+
+    def _scratch_hover_move(self, event):
+        self._move_scratch_cursor(event.x, event.y)
 
     def _update_scratch_tool_buttons(self):
         for name, button in self.scratch_tool_buttons.items():
@@ -1606,6 +1692,7 @@ class TaskApp(BorderlessMixin, tk.Tk):
     def _scratch_press(self, event):
         if not self.scratch_canvas:
             return
+        self._move_scratch_cursor(event.x, event.y)
         if self.scratch_tool == "eraser":
             self._erase_stroke_at(event.x, event.y)
             return
@@ -1702,6 +1789,7 @@ class TaskApp(BorderlessMixin, tk.Tk):
     def _scratch_move(self, event):
         if not self.scratch_canvas:
             return
+        self._move_scratch_cursor(event.x, event.y)
         if self.scratch_tool == "eraser":
             self._erase_stroke_at(event.x, event.y)
             return
@@ -1727,6 +1815,8 @@ class TaskApp(BorderlessMixin, tk.Tk):
         items = self.scratch_canvas.find_overlapping(x - 9, y - 9, x + 9, y + 9)
         for item in reversed(items):
             tags = self.scratch_canvas.gettags(item)
+            if "cursor_overlay" in tags or "text_editor" in tags:
+                continue
             stroke_tag = next((tag for tag in tags if tag.startswith("stroke_")), None)
             text_tag = next((tag for tag in tags if tag.startswith("text_")), None)
             if stroke_tag:
@@ -1772,6 +1862,7 @@ class TaskApp(BorderlessMixin, tk.Tk):
                 tags=(f"text_{text_item['id']}",)
             )
             text_item["item"] = item
+        self._apply_scratch_cursor()
 
     def _save_scratch_png(self):
         if not self.scratch_canvas:
