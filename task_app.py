@@ -8,16 +8,20 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from PIL import Image, ImageDraw, ImageTk
+from PIL import Image, ImageDraw, ImageFont, ImageTk
 
 APP_NAME = "Pine's Journal"
 REGISTRY_VALUE = "PinesJournal"
 DATE_FMT_DB = "%Y-%m-%d"
 DATE_FMT_UI = "%d/%m/%Y"
 
-TITLE_FONT = ("Courier New", 14, "bold")
-SECTION_FONT = ("Courier New", 11, "bold")
-SUBSECTION_FONT = ("Courier New", 9, "bold")
+TITLE_FONT = ("Georgia", 13, "bold")
+SECTION_FONT = ("Georgia", 11, "bold")
+SUBSECTION_FONT = ("Segoe UI", 9, "bold")
+BODY_FONT = ("Segoe UI", 8)
+BODY_FONT_LARGE = ("Segoe UI", 9)
+SMALL_FONT = ("Segoe UI", 7)
+BUTTON_FONT = ("Segoe UI", 7, "bold")
 
 THEMES = {
     "Vinho": {
@@ -142,6 +146,19 @@ def app_data_dir() -> Path:
     return folder
 
 
+def default_png_dir() -> Path:
+    if os.name == "nt":
+        base = Path.home() / "Pictures"
+    else:
+        base = Path.home() / "Pictures"
+    folder = base / "Pine's Journal"
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+    return folder
+
+
 DB_PATH = app_data_dir() / "tarefas.db"
 
 
@@ -213,7 +230,7 @@ def darken(color, amount=0.15):
 
 class SoftButton(tk.Canvas):
     def __init__(self, master, text="", image=None, command=None, width=90, height=32, radius=10,
-                 fill="#ffffff", fg="#111111", hover_fill=None, outline=None, font=("Courier New", 8, "bold"),
+                 fill="#ffffff", fg="#111111", hover_fill=None, outline=None, font=BUTTON_FONT,
                  compound="left", padx=10, cursor="hand2"):
         bg_parent = master.cget("bg") if "bg" in master.keys() else COLORS["bg"]
         super().__init__(master, width=width, height=height, highlightthickness=0, bd=0,
@@ -237,6 +254,10 @@ class SoftButton(tk.Canvas):
         self.bind("<Leave>", self._on_leave)
         self.bind("<Button-1>", self._on_click)
         self.bind("<Configure>", lambda e: self._redraw())
+        self._redraw()
+
+    def set_text(self, text):
+        self.text = text
         self._redraw()
 
     def set_style(self, fill=None, fg=None, hover_fill=None, outline=None, image=None):
@@ -615,7 +636,7 @@ class DatePicker(BorderlessMixin, tk.Toplevel):
         head = tk.Frame(self, bg=COLORS["header"], height=38)
         head.pack(fill="x")
         head.pack_propagate(False)
-        title = tk.Label(head, text="Selecionar data", bg=COLORS["header"], fg="white", font=("Courier New", 9, "bold"))
+        title = tk.Label(head, text="Selecionar data", bg=COLORS["header"], fg="white", font=("Segoe UI", 9, "bold"))
         title.pack(side="left", padx=12)
         close = tk.Button(head, text="×", command=self.destroy, bg=COLORS["header"], fg="white", activebackground=COLORS["header_hover"], activeforeground="white", relief="flat", bd=0, width=3, cursor="hand2", font=SUBSECTION_FONT)
         close.pack(side="right", fill="y")
@@ -649,7 +670,7 @@ class DatePicker(BorderlessMixin, tk.Toplevel):
         grid.pack(fill="both", expand=True, padx=10, pady=(0, 8))
         for c in range(7):
             grid.grid_columnconfigure(c, weight=1, uniform="dp")
-            tk.Label(grid, text=self.WEEKDAYS[c], bg=COLORS["panel"], fg=COLORS["muted"], font=("Courier New", 7, "bold")).grid(row=0, column=c, sticky="nsew", pady=(0, 3))
+            tk.Label(grid, text=self.WEEKDAYS[c], bg=COLORS["panel"], fg=COLORS["muted"], font=("Segoe UI", 7, "bold")).grid(row=0, column=c, sticky="nsew", pady=(0, 3))
         for r in range(1, 7):
             grid.grid_rowconfigure(r, weight=1)
 
@@ -756,30 +777,30 @@ class TaskEditor(BorderlessMixin, tk.Toplevel):
         body = tk.Frame(self, bg=COLORS["panel"], padx=18, pady=12)
         body.pack(fill="both", expand=True)
 
-        tk.Label(body, text="Nome da tarefa *", bg=COLORS["panel"], fg=COLORS["text"], font=("Courier New", 8, "bold")).pack(anchor="w")
+        tk.Label(body, text="Nome da tarefa *", bg=COLORS["panel"], fg=COLORS["text"], font=("Segoe UI", 8, "bold")).pack(anchor="w")
         self.title_entry = tk.Entry(body, font=("Segoe UI", 10), relief="solid", bd=1)
         self.title_entry.pack(fill="x", ipady=5, pady=(4, 10))
 
-        tk.Label(body, text="Descrição", bg=COLORS["panel"], fg=COLORS["text"], font=("Courier New", 8, "bold")).pack(anchor="w")
-        self.desc_text = tk.Text(body, height=7, wrap="word", font=("Segoe UI", 9), relief="solid", bd=1)
+        tk.Label(body, text="Descrição", bg=COLORS["panel"], fg=COLORS["text"], font=("Segoe UI", 8, "bold")).pack(anchor="w")
+        self.desc_text = tk.Text(body, height=7, wrap="word", font=BODY_FONT_LARGE, relief="solid", bd=1)
         self.desc_text.pack(fill="both", expand=True, pady=(4, 10))
 
-        tk.Label(body, text="Data de conclusão", bg=COLORS["panel"], fg=COLORS["text"], font=("Courier New", 8, "bold")).pack(anchor="w")
+        tk.Label(body, text="Data de conclusão", bg=COLORS["panel"], fg=COLORS["text"], font=("Segoe UI", 8, "bold")).pack(anchor="w")
         date_row = tk.Frame(body, bg=COLORS["panel"])
         date_row.pack(fill="x", pady=(4, 0))
         self.date_entry = tk.Entry(date_row, font=("Segoe UI", 10), relief="solid", bd=1)
         self.date_entry.pack(side="left", fill="x", expand=True, ipady=5)
         self.date_entry.bind("<Double-Button-1>", lambda _e: self._open_date_picker())
-        tk.Button(date_row, text="Calendário", command=self._open_date_picker, bg=COLORS["neutral"], fg=COLORS["text"], relief="flat", padx=8, cursor="hand2", font=("Courier New", 7, "bold")).pack(side="left", padx=(5, 0), ipady=5)
+        tk.Button(date_row, text="Calendário", command=self._open_date_picker, bg=COLORS["neutral"], fg=COLORS["text"], relief="flat", padx=8, cursor="hand2", font=("Segoe UI", 7, "bold")).pack(side="left", padx=(5, 0), ipady=5)
         tk.Button(date_row, text="×", command=lambda: self.date_entry.delete(0, "end"), bg=COLORS["neutral"], fg=COLORS["muted"], relief="flat", width=3, cursor="hand2", font=SUBSECTION_FONT).pack(side="left", padx=(4, 0), ipady=3)
-        tk.Label(body, text="dd/mm/aaaa", bg=COLORS["panel"], fg=COLORS["muted"], font=("Segoe UI", 7)).pack(anchor="w", pady=(2, 0))
+        tk.Label(body, text="dd/mm/aaaa", bg=COLORS["panel"], fg=COLORS["muted"], font=SMALL_FONT).pack(anchor="w", pady=(2, 0))
 
         footer = tk.Frame(self, bg=COLORS["bg"], padx=14, pady=10)
         footer.pack(fill="x", side="bottom")
         if self.task_id is not None:
             tk.Button(footer, text="Excluir", command=self._delete, bg=COLORS["danger_bg"], fg=COLORS["danger"], relief="flat", padx=10, pady=6, cursor="hand2").pack(side="left")
         tk.Button(footer, text="Cancelar", command=self._close, bg=COLORS["neutral"], fg=COLORS["text"], relief="flat", padx=10, pady=6, cursor="hand2").pack(side="right")
-        tk.Button(footer, text="Salvar tarefa", command=self._save, bg=COLORS["accent"], fg="white", activebackground=COLORS["accent_dark"], activeforeground="white", relief="flat", padx=14, pady=6, font=("Courier New", 8, "bold"), cursor="hand2").pack(side="right", padx=(0, 6))
+        tk.Button(footer, text="Salvar tarefa", command=self._save, bg=COLORS["accent"], fg="white", activebackground=COLORS["accent_dark"], activeforeground="white", relief="flat", padx=14, pady=6, font=BUTTON_FONT, cursor="hand2").pack(side="right", padx=(0, 6))
 
     def _load(self):
         if self.task_id is not None:
@@ -853,7 +874,7 @@ class TaskEditor(BorderlessMixin, tk.Toplevel):
 
 
 class TaskApp(BorderlessMixin, tk.Tk):
-    APP_W = 520
+    APP_W = 540
     APP_H = 650
 
     def __init__(self):
@@ -876,13 +897,22 @@ class TaskApp(BorderlessMixin, tk.Tk):
 
         self.scratch_tool = "brush"
         self.scratch_strokes = []
+        self.scratch_texts = []
         self.scratch_next_id = 1
+        self.scratch_next_text_id = 1
         self.scratch_active_id = None
         self.scratch_canvas = None
+        self.scratch_text_entry = None
+        self.scratch_text_window = None
         self.scratch_tool_buttons = {}
         self.active_editor = None
         self.active_day_window = None
         self.ui_images = {}
+
+        self.task_search_var = tk.StringVar(self, value="")
+        self.task_filter_var = tk.StringVar(self, value="Todas")
+        configured_png = self.repo.get_setting("png_folder", str(default_png_dir()))
+        self.png_folder = Path(configured_png).expanduser() if configured_png else default_png_dir()
 
         self.title(APP_NAME)
         self._apply_native_icon()
@@ -960,27 +990,28 @@ class TaskApp(BorderlessMixin, tk.Tk):
         controls = tk.Frame(self.topbar, bg=COLORS["header"])
         controls.pack(side="right", padx=(4, 8), pady=9)
 
-        self.min_btn = SoftButton(
-            controls, text="—", command=self._minimize, width=30, height=30, radius=9,
-            fill=COLORS["header"], hover_fill=COLORS["header_hover"], fg="white",
-            outline=lighten(COLORS["header"], 0.10), font=("Courier New", 11, "bold"), compound="center"
-        )
-        self.min_btn.pack(side="right", padx=(0, 6))
-
+        # Fechar fica na extremidade direita; minimizar fica imediatamente à esquerda.
         self.close_btn = SoftButton(
             controls, text="×", command=self.destroy, width=30, height=30, radius=9,
             fill=COLORS["header"], hover_fill="#a8324b", fg="white",
-            outline=lighten(COLORS["header"], 0.10), font=("Courier New", 11, "bold"), compound="center"
+            outline=lighten(COLORS["header"], 0.10), font=("Segoe UI", 11, "bold"), compound="center"
         )
         self.close_btn.pack(side="right")
+
+        self.min_btn = SoftButton(
+            controls, text="—", command=self._minimize, width=30, height=30, radius=9,
+            fill=COLORS["header"], hover_fill=COLORS["header_hover"], fg="white",
+            outline=lighten(COLORS["header"], 0.10), font=("Segoe UI", 10, "bold"), compound="center"
+        )
+        self.min_btn.pack(side="right", padx=(0, 6))
 
         self.navbar = tk.Frame(self, bg=COLORS["panel"], height=58, highlightbackground=COLORS["border"], highlightthickness=1)
         self.navbar.pack(fill="x")
         self.navbar.pack_propagate(False)
 
-        self.list_btn = self._nav_button(self.navbar, "Lista", "lista.png", self.show_list)
+        self.list_btn = self._nav_button(self.navbar, "Lista de Tarefas", "lista.png", self.show_list)
         self.calendar_btn = self._nav_button(self.navbar, "Calendário", "calendario.png", self.show_calendar)
-        self.scratch_btn = self._nav_button(self.navbar, "Bloco", "bloco.png", self.show_scratch)
+        self.scratch_btn = self._nav_button(self.navbar, "Bloco de Notas", "bloco.png", self.show_scratch)
         self.settings_btn = self._nav_button(self.navbar, "Configurações", "configuracoes.png", self.show_settings)
 
         self.content = tk.Frame(self, bg=COLORS["bg"])
@@ -1044,7 +1075,7 @@ class TaskApp(BorderlessMixin, tk.Tk):
         btn = SoftButton(
             parent, text=text, image=icon, command=command, width=125, height=44, radius=10,
             fill=COLORS["panel"], fg=COLORS["muted"], hover_fill=COLORS["neutral"],
-            outline=COLORS["border"], font=("Courier New", 7, "bold"), compound="top", padx=0
+            outline=COLORS["border"], font=("Segoe UI", 7, "bold"), compound="top", padx=0
         )
         btn.icon_file = icon_file
         btn.icon_key = key
@@ -1072,9 +1103,13 @@ class TaskApp(BorderlessMixin, tk.Tk):
             button.set_selected(active)
 
     def clear_content(self):
+        if getattr(self, "scratch_text_entry", None) is not None:
+            self._commit_scratch_text_entry()
         for child in self.content.winfo_children():
             child.destroy()
         self.scratch_canvas = None
+        self.scratch_text_entry = None
+        self.scratch_text_window = None
 
     def refresh_current_view(self):
         if self.current_view == "calendar":
@@ -1108,43 +1143,122 @@ class TaskApp(BorderlessMixin, tk.Tk):
         self.clear_content()
 
         header = tk.Frame(self.content, bg=COLORS["bg"])
-        header.pack(fill="x", padx=14, pady=(12, 7))
+        header.pack(fill="x", padx=14, pady=(11, 6))
         tk.Label(header, text="Minhas tarefas", bg=COLORS["bg"], fg=COLORS["text"], font=SECTION_FONT).pack(side="left", pady=(5, 0))
-        tasks = self.repo.list_tasks()
-        pending = [t for t in tasks if not t["completed"]]
-
-        header_actions = tk.Frame(header, bg=COLORS["bg"])
-        header_actions.pack(side="right")
-        tk.Label(
-            header_actions,
-            text=f"{len(pending)} pendente{'s' if len(pending) != 1 else ''}",
-            bg=COLORS["bg"], fg=COLORS["muted"], font=("Segoe UI", 8)
-        ).pack(side="left", padx=(0, 8), pady=(5, 0))
         SoftButton(
-            header_actions, text="+ Nova", command=self.open_new_task,
+            header, text="+ Nova", command=self.open_new_task,
             width=78, height=30, radius=9,
             fill=COLORS["accent"], hover_fill=COLORS["accent_dark"], fg="white",
             outline=darken(COLORS["accent"], 0.18),
-            font=("Courier New", 7, "bold"), compound="center"
+            font=BUTTON_FONT, compound="center"
         ).pack(side="right")
+
+        filter_row = tk.Frame(self.content, bg=COLORS["bg"])
+        filter_row.pack(fill="x", padx=14, pady=(0, 7))
+
+        search_box = tk.Frame(filter_row, bg=COLORS["panel"], highlightbackground=COLORS["border"], highlightthickness=1)
+        search_box.pack(side="left", fill="x", expand=True)
+        tk.Label(search_box, text="⌕", bg=COLORS["panel"], fg=COLORS["muted"], font=("Segoe UI Symbol", 10, "bold")).pack(side="left", padx=(8, 3))
+        self.task_search_entry = tk.Entry(
+            search_box, textvariable=self.task_search_var, relief="flat", bd=0,
+            bg=COLORS["panel"], fg=COLORS["text"], insertbackground=COLORS["text"],
+            font=BODY_FONT
+        )
+        self.task_search_entry.pack(side="left", fill="x", expand=True, ipady=6, padx=(0, 6))
+        self.task_search_entry.bind("<KeyRelease>", lambda _e: self._render_filtered_tasks())
+
+        self.task_filter_button = SoftButton(
+            filter_row,
+            text=f"{self.task_filter_var.get()}  ▾",
+            command=self._open_task_filter_menu,
+            width=118, height=31, radius=9,
+            fill=COLORS["panel"], hover_fill=COLORS["selected"], fg=COLORS["text"],
+            outline=COLORS["border"], font=BUTTON_FONT, compound="center"
+        )
+        self.task_filter_button.pack(side="right", padx=(7, 0))
 
         overdue = self.repo.overdue_count()
         if overdue:
             banner = tk.Frame(self.content, bg=COLORS["danger_bg"], highlightbackground="#f0caca", highlightthickness=1)
-            banner.pack(fill="x", padx=14, pady=(0, 8))
-            tk.Label(banner, text=f"⚠ {overdue} atrasada{'s' if overdue != 1 else ''}", bg=COLORS["danger_bg"], fg=COLORS["danger"], font=("Courier New", 8, "bold")).pack(side="left", padx=10, pady=7)
-            tk.Label(banner, text="Prazo vencido", bg=COLORS["danger_bg"], fg="#986060", font=("Segoe UI", 7)).pack(side="right", padx=10)
+            banner.pack(fill="x", padx=14, pady=(0, 7))
+            tk.Label(banner, text=f"⚠ {overdue} atrasada{'s' if overdue != 1 else ''}", bg=COLORS["danger_bg"], fg=COLORS["danger"], font=("Segoe UI", 8, "bold")).pack(side="left", padx=10, pady=6)
+            tk.Label(banner, text="Prazo vencido", bg=COLORS["danger_bg"], fg="#986060", font=SMALL_FONT).pack(side="right", padx=10)
 
-        scroll = ScrollableFrame(self.content, bg=COLORS["bg"])
-        scroll.pack(fill="both", expand=True, padx=14, pady=(0, 10))
+        self.task_scroll = ScrollableFrame(self.content, bg=COLORS["bg"])
+        self.task_scroll.pack(fill="both", expand=True, padx=14, pady=(0, 10))
+        self._render_filtered_tasks()
+
+    def _open_task_filter_menu(self):
+        options = ["Todas", "Pendentes", "Concluídas", "Atrasadas", "Sem data"]
+        menu = tk.Menu(
+            self, tearoff=False,
+            bg=COLORS["panel"], fg=COLORS["text"],
+            activebackground=COLORS["selected"], activeforeground=COLORS["text"],
+            font=BODY_FONT, bd=1, relief="solid"
+        )
+        current = self.task_filter_var.get() or "Todas"
+        for option in options:
+            label = f"✓  {option}" if option == current else f"    {option}"
+            menu.add_command(label=label, command=lambda value=option: self._set_task_filter(value))
+        try:
+            x = self.task_filter_button.winfo_rootx()
+            y = self.task_filter_button.winfo_rooty() + self.task_filter_button.winfo_height() + 2
+            menu.tk_popup(x, y)
+        finally:
+            try:
+                menu.grab_release()
+            except tk.TclError:
+                pass
+
+    def _set_task_filter(self, value):
+        self.task_filter_var.set(value)
+        if hasattr(self, "task_filter_button") and self.task_filter_button.winfo_exists():
+            self.task_filter_button.set_text(f"{value}  ▾")
+        self._render_filtered_tasks()
+
+    def _render_filtered_tasks(self):
+        scroll = getattr(self, "task_scroll", None)
+        if scroll is None or not scroll.winfo_exists():
+            return
+        for child in scroll.inner.winfo_children():
+            child.destroy()
+
+        tasks = list(self.repo.list_tasks())
+        query = self.task_search_var.get().strip().lower()
+        filter_name = self.task_filter_var.get() or "Todas"
+        today_db = date.today().strftime(DATE_FMT_DB)
+
+        if query:
+            filtered = []
+            for task in tasks:
+                haystack = " ".join([
+                    task["title"] or "",
+                    task["description"] or "",
+                    format_due_date(task["due_date"]) if task["due_date"] else "",
+                ]).lower()
+                if query in haystack:
+                    filtered.append(task)
+            tasks = filtered
+
+        if filter_name == "Pendentes":
+            tasks = [t for t in tasks if not t["completed"]]
+        elif filter_name == "Concluídas":
+            tasks = [t for t in tasks if t["completed"]]
+        elif filter_name == "Atrasadas":
+            tasks = [t for t in tasks if not t["completed"] and t["due_date"] and t["due_date"] < today_db]
+        elif filter_name == "Sem data":
+            tasks = [t for t in tasks if not t["due_date"]]
 
         if not tasks:
             empty = tk.Frame(scroll.inner, bg=COLORS["panel"], highlightbackground=COLORS["border"], highlightthickness=1)
             empty.pack(fill="x", pady=4)
-            tk.Label(empty, text="Seu bloco está vazio", bg=COLORS["panel"], fg=COLORS["text"], font=SUBSECTION_FONT).pack(pady=(28, 4))
-            tk.Label(empty, text="Use + Nova para criar a primeira tarefa.", bg=COLORS["panel"], fg=COLORS["muted"], font=("Segoe UI", 8)).pack(pady=(0, 28))
+            message = "Seu bloco está vazio" if not query and filter_name == "Todas" else "Nenhuma tarefa encontrada"
+            detail = "Use + Nova para criar a primeira tarefa." if message == "Seu bloco está vazio" else "Tente alterar a pesquisa ou o filtro."
+            tk.Label(empty, text=message, bg=COLORS["panel"], fg=COLORS["text"], font=SUBSECTION_FONT).pack(pady=(28, 4))
+            tk.Label(empty, text=detail, bg=COLORS["panel"], fg=COLORS["muted"], font=BODY_FONT).pack(pady=(0, 28))
             return
 
+        pending = [t for t in tasks if not t["completed"]]
         completed = [t for t in tasks if t["completed"]]
         if pending:
             self._section_label(scroll.inner, "Pendentes", len(pending))
@@ -1158,8 +1272,8 @@ class TaskApp(BorderlessMixin, tk.Tk):
     def _section_label(self, parent, text, count, top_pad=0):
         frame = tk.Frame(parent, bg=COLORS["bg"])
         frame.pack(fill="x", pady=(top_pad, 4))
-        tk.Label(frame, text=text, bg=COLORS["bg"], fg=COLORS["muted"], font=("Courier New", 8, "bold")).pack(side="left")
-        tk.Label(frame, text=str(count), bg=COLORS["neutral"], fg=COLORS["muted"], font=("Courier New", 7, "bold"), padx=6, pady=1).pack(side="left", padx=6)
+        tk.Label(frame, text=text, bg=COLORS["bg"], fg=COLORS["muted"], font=("Segoe UI", 8, "bold")).pack(side="left")
+        tk.Label(frame, text=str(count), bg=COLORS["neutral"], fg=COLORS["muted"], font=("Segoe UI", 7, "bold"), padx=6, pady=1).pack(side="left", padx=6)
 
     def _task_row(self, parent, task, refresh_callback=None, editor_callback=None):
         completed = bool(task["completed"])
@@ -1179,14 +1293,14 @@ class TaskApp(BorderlessMixin, tk.Tk):
         text_frame = tk.Frame(row, bg=bg, cursor="hand2")
         text_frame.pack(side="left", fill="x", expand=True, pady=7)
         title_fg = COLORS["muted"] if completed else COLORS["text"]
-        title = tk.Label(text_frame, text=task["title"], bg=bg, fg=title_fg, font=("Courier New", 9, "bold"), anchor="w", cursor="hand2")
+        title = tk.Label(text_frame, text=task["title"], bg=bg, fg=title_fg, font=("Segoe UI", 9, "bold"), anchor="w", cursor="hand2")
         title.pack(anchor="w")
         desc = None
         if task["description"]:
             preview = task["description"].replace("\n", " ").strip()
             if len(preview) > 58:
                 preview = preview[:55] + "..."
-            desc = tk.Label(text_frame, text=preview, bg=bg, fg=COLORS["muted"], font=("Segoe UI", 7), anchor="w", cursor="hand2")
+            desc = tk.Label(text_frame, text=preview, bg=bg, fg=COLORS["muted"], font=SMALL_FONT, anchor="w", cursor="hand2")
             desc.pack(anchor="w", pady=(1, 0))
 
         due = None
@@ -1194,7 +1308,7 @@ class TaskApp(BorderlessMixin, tk.Tk):
             label_bg = COLORS["danger_bg"] if overdue else COLORS["neutral"]
             label_fg = COLORS["danger"] if overdue else COLORS["muted"]
             due_text = ("! " if overdue else "") + format_due_date(task["due_date"])
-            due = tk.Label(row, text=due_text, bg=label_bg, fg=label_fg, font=("Courier New", 7, "bold"), padx=7, pady=4, cursor="hand2")
+            due = tk.Label(row, text=due_text, bg=label_bg, fg=label_fg, font=("Segoe UI", 7, "bold"), padx=7, pady=4, cursor="hand2")
             due.pack(side="right", padx=8)
 
         open_fn = lambda _e, tid=task["id"]: self.open_task_editor(task_id=tid, on_close=editor_callback)
@@ -1229,14 +1343,16 @@ class TaskApp(BorderlessMixin, tk.Tk):
         card.pack(fill="both", expand=True, padx=14, pady=(0, 10))
         grid = tk.Frame(card, bg=COLORS["panel"])
         grid.pack(fill="both", expand=True, padx=8, pady=8)
+        grid.grid_anchor("center")
         for col in range(7):
-            grid.grid_columnconfigure(col, weight=1, uniform="day")
-        for row in range(7):
-            grid.grid_rowconfigure(row, weight=1)
+            grid.grid_columnconfigure(col, weight=0, uniform="day", minsize=68)
+        grid.grid_rowconfigure(0, weight=0, minsize=28)
+        for row in range(1, 7):
+            grid.grid_rowconfigure(row, weight=0, uniform="week", minsize=66)
 
         weekdays = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
         for col, name in enumerate(weekdays):
-            tk.Label(grid, text=name, bg=COLORS["panel"], fg=COLORS["muted"], font=("Courier New", 7, "bold")).grid(row=0, column=col, sticky="nsew", padx=1, pady=2)
+            tk.Label(grid, text=name, bg=COLORS["panel"], fg=COLORS["muted"], font=("Segoe UI", 7, "bold")).grid(row=0, column=col, sticky="nsew", padx=1, pady=2)
 
         month_names = ["", "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
         self.month_label.configure(text=f"{month_names[self.calendar_month]} {self.calendar_year}")
@@ -1249,7 +1365,9 @@ class TaskApp(BorderlessMixin, tk.Tk):
         for r, week in enumerate(rows, start=1):
             for c, day_num in enumerate(week):
                 if day_num == 0:
-                    tk.Frame(grid, bg=COLORS["panel"]).grid(row=r, column=c, sticky="nsew", padx=1, pady=1)
+                    blank = tk.Frame(grid, bg=COLORS["panel"], width=68, height=66)
+                    blank.grid(row=r, column=c, sticky="nsew", padx=1, pady=1)
+                    blank.grid_propagate(False)
                     continue
                 day_obj = date(self.calendar_year, self.calendar_month, day_num)
                 key = day_obj.strftime(DATE_FMT_DB)
@@ -1257,14 +1375,19 @@ class TaskApp(BorderlessMixin, tk.Tk):
                 is_today = day_obj == today
                 is_overdue = day_obj < today and pending > 0
                 day_bg = COLORS["today"] if is_today else (COLORS["danger_bg"] if is_overdue else COLORS["panel"])
-                cell = tk.Frame(grid, bg=day_bg, highlightbackground=COLORS["border"], highlightthickness=1, cursor="hand2")
+                cell = tk.Frame(
+                    grid, bg=day_bg, width=68, height=66,
+                    highlightbackground=COLORS["border"], highlightthickness=1, cursor="hand2"
+                )
                 cell.grid(row=r, column=c, sticky="nsew", padx=1, pady=1)
-                day_label = tk.Label(cell, text=str(day_num), bg=day_bg, fg=COLORS["danger"] if is_overdue else COLORS["text"], font=("Courier New", 8, "bold"), cursor="hand2")
-                day_label.pack(anchor="nw", padx=5, pady=(4, 0))
+                cell.grid_propagate(False)
+                cell.pack_propagate(False)
+                day_label = tk.Label(cell, text=str(day_num), bg=day_bg, fg=COLORS["danger"] if is_overdue else COLORS["text"], font=BUTTON_FONT, cursor="hand2")
+                day_label.place(x=6, y=5)
                 count_label = None
                 if total:
-                    count_label = tk.Label(cell, text=f"• {total}", bg=day_bg, fg=COLORS["danger"] if is_overdue else COLORS["accent"], font=("Courier New", 7, "bold"), cursor="hand2")
-                    count_label.pack(anchor="w", padx=5, pady=(1, 3))
+                    count_label = tk.Label(cell, text=f"• {total}", bg=day_bg, fg=COLORS["danger"] if is_overdue else COLORS["accent"], font=("Segoe UI", 7, "bold"), cursor="hand2")
+                    count_label.place(x=6, y=25)
                 open_day = lambda _e, d=day_obj: self.open_day(d)
                 for widget in (cell, day_label, count_label):
                     if widget is not None:
@@ -1364,7 +1487,7 @@ class TaskApp(BorderlessMixin, tk.Tk):
                 empty.pack(fill="x", pady=3)
                 tk.Label(
                     empty, text="Nenhuma tarefa neste dia",
-                    bg=COLORS["panel"], fg=COLORS["muted"], font=("Segoe UI", 9)
+                    bg=COLORS["panel"], fg=COLORS["muted"], font=BODY_FONT_LARGE
                 ).pack(pady=26)
             else:
                 callback = lambda: render(refresh_calendar=True)
@@ -1412,34 +1535,42 @@ class TaskApp(BorderlessMixin, tk.Tk):
         self.clear_content()
 
         toolbar = tk.Frame(self.content, bg=COLORS["bg"])
-        toolbar.pack(fill="x", padx=14, pady=(12, 7))
+        toolbar.pack(fill="x", padx=14, pady=(11, 7))
 
-        self.ui_images["tool_brush"] = load_tinted_icon("lapis.png", 16, COLORS["text"])
-        self.ui_images["tool_eraser"] = load_tinted_icon("borracha.png", 16, COLORS["text"])
+        self.ui_images["tool_brush"] = load_tinted_icon("lapis.png", 15, COLORS["text"])
+        self.ui_images["tool_eraser"] = load_tinted_icon("borracha.png", 15, COLORS["text"])
+        self.ui_images["tool_text"] = load_tinted_icon("text.png", 15, COLORS["text"])
         self.ui_images["tool_download"] = load_tinted_icon("download.png", 15, "white")
 
         brush = SoftButton(
             toolbar, text="Lápis", image=self.ui_images["tool_brush"],
-            command=lambda: self._set_scratch_tool("brush"), width=92, height=32, radius=10,
+            command=lambda: self._set_scratch_tool("brush"), width=76, height=32, radius=9,
             fill=COLORS["neutral"], hover_fill=COLORS["selected"], fg=COLORS["text"],
-            outline=COLORS["border"], font=("Courier New", 8, "bold")
+            outline=COLORS["border"], font=("Segoe UI", 7, "bold")
         )
         brush.pack(side="left")
         eraser = SoftButton(
             toolbar, text="Borracha", image=self.ui_images["tool_eraser"],
-            command=lambda: self._set_scratch_tool("eraser"), width=106, height=32, radius=10,
+            command=lambda: self._set_scratch_tool("eraser"), width=92, height=32, radius=9,
             fill=COLORS["neutral"], hover_fill=COLORS["selected"], fg=COLORS["text"],
-            outline=COLORS["border"], font=("Courier New", 8, "bold")
+            outline=COLORS["border"], font=("Segoe UI", 7, "bold")
         )
-        eraser.pack(side="left", padx=(6, 0))
-        self.scratch_tool_buttons = {"brush": brush, "eraser": eraser}
+        eraser.pack(side="left", padx=(5, 0))
+        text_btn = SoftButton(
+            toolbar, text="Texto", image=self.ui_images["tool_text"],
+            command=lambda: self._set_scratch_tool("text"), width=78, height=32, radius=9,
+            fill=COLORS["neutral"], hover_fill=COLORS["selected"], fg=COLORS["text"],
+            outline=COLORS["border"], font=("Segoe UI", 7, "bold")
+        )
+        text_btn.pack(side="left", padx=(5, 0))
+        self.scratch_tool_buttons = {"brush": brush, "eraser": eraser, "text": text_btn}
         self._update_scratch_tool_buttons()
 
         save_btn = SoftButton(
             toolbar, text="Salvar PNG", image=self.ui_images["tool_download"],
-            command=self._save_scratch_png, width=112, height=32, radius=10, fill=COLORS["accent"],
+            command=self._save_scratch_png, width=106, height=32, radius=9, fill=COLORS["accent"],
             hover_fill=COLORS["accent_dark"], fg="white", outline=darken(COLORS["accent"], 0.18),
-            font=("Courier New", 8, "bold")
+            font=("Segoe UI", 7, "bold")
         )
         save_btn.pack(side="right")
 
@@ -1453,10 +1584,12 @@ class TaskApp(BorderlessMixin, tk.Tk):
         self.after_idle(self._redraw_scratch)
 
     def _set_scratch_tool(self, tool):
+        self._commit_scratch_text_entry()
         self.scratch_tool = tool
         self.scratch_active_id = None
         if self.scratch_canvas:
-            self.scratch_canvas.configure(cursor="pencil" if tool == "brush" else "dotbox")
+            cursors = {"brush": "pencil", "eraser": "dotbox", "text": "xterm"}
+            self.scratch_canvas.configure(cursor=cursors.get(tool, "arrow"))
         self._update_scratch_tool_buttons()
 
     def _update_scratch_tool_buttons(self):
@@ -1476,6 +1609,9 @@ class TaskApp(BorderlessMixin, tk.Tk):
         if self.scratch_tool == "eraser":
             self._erase_stroke_at(event.x, event.y)
             return
+        if self.scratch_tool == "text":
+            self._begin_scratch_text_entry(event.x, event.y)
+            return
         stroke_id = self.scratch_next_id
         self.scratch_next_id += 1
         stroke = {
@@ -1494,6 +1630,74 @@ class TaskApp(BorderlessMixin, tk.Tk):
         stroke["item"] = item
         self.scratch_strokes.append(stroke)
         self.scratch_active_id = stroke_id
+
+    def _begin_scratch_text_entry(self, x, y):
+        self._commit_scratch_text_entry()
+        if not self.scratch_canvas:
+            return
+        entry = tk.Entry(
+            self.scratch_canvas, font=("Segoe UI", 10),
+            bg="#fffef8", fg="#2d2926", insertbackground="#2d2926",
+            relief="solid", bd=1
+        )
+        window_id = self.scratch_canvas.create_window(
+            x, y, anchor="nw", window=entry, width=190, height=28, tags=("text_editor",)
+        )
+        self.scratch_text_entry = entry
+        self.scratch_text_window = window_id
+        self.scratch_text_position = (x, y)
+        entry.focus_set()
+        entry.bind("<Return>", lambda _e: self._commit_scratch_text_entry())
+        entry.bind("<Escape>", lambda _e: self._cancel_scratch_text_entry())
+
+    def _commit_scratch_text_entry(self):
+        entry = getattr(self, "scratch_text_entry", None)
+        if entry is None:
+            return
+        try:
+            value = entry.get().strip()
+        except tk.TclError:
+            value = ""
+        pos = getattr(self, "scratch_text_position", (12, 12))
+        if self.scratch_canvas and self.scratch_text_window is not None:
+            try:
+                self.scratch_canvas.delete(self.scratch_text_window)
+            except tk.TclError:
+                pass
+        try:
+            entry.destroy()
+        except tk.TclError:
+            pass
+        self.scratch_text_entry = None
+        self.scratch_text_window = None
+        if not value or not self.scratch_canvas:
+            return
+        text_id = self.scratch_next_text_id
+        self.scratch_next_text_id += 1
+        x, y = pos
+        item = self.scratch_canvas.create_text(
+            x, y, text=value, anchor="nw", fill="#2d2926",
+            font=("Segoe UI", 11), tags=(f"text_{text_id}",)
+        )
+        self.scratch_texts.append({
+            "id": text_id, "x": x, "y": y, "text": value,
+            "color": "#2d2926", "size": 11, "item": item
+        })
+
+    def _cancel_scratch_text_entry(self):
+        entry = getattr(self, "scratch_text_entry", None)
+        if self.scratch_canvas and self.scratch_text_window is not None:
+            try:
+                self.scratch_canvas.delete(self.scratch_text_window)
+            except tk.TclError:
+                pass
+        if entry is not None:
+            try:
+                entry.destroy()
+            except tk.TclError:
+                pass
+        self.scratch_text_entry = None
+        self.scratch_text_window = None
 
     def _scratch_move(self, event):
         if not self.scratch_canvas:
@@ -1524,17 +1728,25 @@ class TaskApp(BorderlessMixin, tk.Tk):
         for item in reversed(items):
             tags = self.scratch_canvas.gettags(item)
             stroke_tag = next((tag for tag in tags if tag.startswith("stroke_")), None)
-            if not stroke_tag:
-                continue
-            try:
-                stroke_id = int(stroke_tag.split("_", 1)[1])
-            except ValueError:
-                continue
-            self.scratch_canvas.delete(item)
-            self.scratch_strokes = [s for s in self.scratch_strokes if s["id"] != stroke_id]
-            if self.scratch_active_id == stroke_id:
-                self.scratch_active_id = None
-            break
+            text_tag = next((tag for tag in tags if tag.startswith("text_")), None)
+            if stroke_tag:
+                try:
+                    stroke_id = int(stroke_tag.split("_", 1)[1])
+                except ValueError:
+                    continue
+                self.scratch_canvas.delete(item)
+                self.scratch_strokes = [s for s in self.scratch_strokes if s["id"] != stroke_id]
+                if self.scratch_active_id == stroke_id:
+                    self.scratch_active_id = None
+                break
+            if text_tag:
+                try:
+                    text_id = int(text_tag.split("_", 1)[1])
+                except ValueError:
+                    continue
+                self.scratch_canvas.delete(item)
+                self.scratch_texts = [t for t in self.scratch_texts if t["id"] != text_id]
+                break
 
     def _redraw_scratch(self):
         if not self.scratch_canvas or not self.scratch_canvas.winfo_exists():
@@ -1552,23 +1764,30 @@ class TaskApp(BorderlessMixin, tk.Tk):
                 tags=(f"stroke_{stroke['id']}",)
             )
             stroke["item"] = item
+        for text_item in self.scratch_texts:
+            item = self.scratch_canvas.create_text(
+                text_item["x"], text_item["y"], text=text_item["text"],
+                anchor="nw", fill=text_item["color"],
+                font=("Segoe UI", text_item.get("size", 11)),
+                tags=(f"text_{text_item['id']}",)
+            )
+            text_item["item"] = item
 
     def _save_scratch_png(self):
         if not self.scratch_canvas:
             return
+        self._commit_scratch_text_entry()
         self.scratch_canvas.update_idletasks()
         width = max(1, self.scratch_canvas.winfo_width())
         height = max(1, self.scratch_canvas.winfo_height())
-        default_name = f"PinesJournal_Bloco_{datetime.now().strftime('%Y%m%d_%H%M')}.png"
-        path = filedialog.asksaveasfilename(
-            parent=self,
-            title="Salvar bloco como PNG",
-            defaultextension=".png",
-            initialfile=default_name,
-            filetypes=[("Imagem PNG", "*.png")],
-        )
-        if not path:
+        folder = Path(self.png_folder).expanduser()
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            messagebox.showerror("Salvar PNG", f"Não foi possível acessar a pasta configurada.\n\n{exc}", parent=self)
             return
+        default_name = f"PinesJournal_Bloco_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+        path = folder / default_name
 
         image = Image.new("RGB", (width, height), "#fffef8")
         draw = ImageDraw.Draw(image)
@@ -1582,7 +1801,26 @@ class TaskApp(BorderlessMixin, tk.Tk):
                 draw.ellipse((x - r, y - r, x + r, y + r), fill=stroke["color"])
             else:
                 draw.line(points, fill=stroke["color"], width=stroke["width"], joint="curve")
-        image.save(path, "PNG")
+
+        try:
+            if os.name == "nt":
+                font_path = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts" / "cour.ttf"
+                pil_font = ImageFont.truetype(str(font_path), 15) if font_path.exists() else ImageFont.load_default()
+            else:
+                candidate = Path("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf")
+                pil_font = ImageFont.truetype(str(candidate), 15) if candidate.exists() else ImageFont.load_default()
+        except Exception:
+            pil_font = ImageFont.load_default()
+
+        for text_item in self.scratch_texts:
+            draw.text((text_item["x"], text_item["y"]), text_item["text"], fill=text_item["color"], font=pil_font)
+
+        try:
+            image.save(path, "PNG")
+        except OSError as exc:
+            messagebox.showerror("Salvar PNG", f"Não foi possível salvar a imagem.\n\n{exc}", parent=self)
+            return
+        messagebox.showinfo("Bloco salvo", f"Imagem salva em:\n{path}", parent=self)
 
     def show_settings(self):
         self.current_view = "settings"
@@ -1602,10 +1840,10 @@ class TaskApp(BorderlessMixin, tk.Tk):
             selected = name == self.theme_name
             btn = SoftButton(
                 theme_row, text=name, command=lambda n=name: self._change_theme(n),
-                width=104, height=32, radius=10, fill=palette["accent"],
+                width=104, height=30, radius=9, fill=palette["accent"],
                 hover_fill=palette["accent_dark"], fg="white",
                 outline=(darken(palette["accent"], 0.28) if selected else darken(palette["accent"], 0.12)),
-                font=("Courier New", 7, "bold"), compound="center"
+                font=BUTTON_FONT, compound="center"
             )
             btn.pack(side="left", expand=True, fill="x", padx=3)
 
@@ -1621,22 +1859,83 @@ class TaskApp(BorderlessMixin, tk.Tk):
         self.confirm_delete_var = tk.BooleanVar(value=self.confirm_delete)
         self._settings_check(behavior, "Confirmar antes de excluir tarefas", self.confirm_delete_var, self._toggle_confirm_delete)
 
+        png_card = self._settings_card(scroll.inner, "Pasta dos PNGs do Bloco de Notas", top=9)
+        tk.Label(
+            png_card, text="As imagens salvas pelo Bloco de Notas serão gravadas nesta pasta.",
+            bg=COLORS["panel"], fg=COLORS["muted"], font=SMALL_FONT
+        ).pack(anchor="w", pady=(1, 5))
+        png_row = tk.Frame(png_card, bg=COLORS["panel"])
+        png_row.pack(fill="x")
+        self.png_folder_var = tk.StringVar(value=str(self.png_folder))
+        png_entry = tk.Entry(png_row, textvariable=self.png_folder_var, font=BODY_FONT, relief="solid", bd=1)
+        png_entry.pack(side="left", fill="x", expand=True, ipady=4)
+        png_entry.bind("<Return>", lambda _e: self._save_png_folder_from_entry())
+        png_entry.bind("<FocusOut>", lambda _e: self._save_png_folder_from_entry(silent=True))
+        SoftButton(
+            png_row, text="Escolher", command=self._choose_png_folder, width=76, height=28, radius=8,
+            fill=COLORS["neutral"], hover_fill=COLORS["selected"], fg=COLORS["text"],
+            outline=COLORS["border"], font=BUTTON_FONT, compound="center"
+        ).pack(side="left", padx=(6, 0))
+
         data_card = self._settings_card(scroll.inner, "Dados locais", top=9)
-        tk.Label(data_card, text="As tarefas ficam salvas neste computador.", bg=COLORS["panel"], fg=COLORS["muted"], font=("Segoe UI", 7)).pack(anchor="w", pady=(2, 4))
-        tk.Label(data_card, text=str(DB_PATH), bg=COLORS["panel"], fg=COLORS["text"], wraplength=430, justify="left", font=("Consolas", 7)).pack(anchor="w")
-        tk.Button(data_card, text="Abrir pasta de dados", command=self._open_data_folder, bg=COLORS["neutral"], fg=COLORS["text"], relief="flat", padx=10, pady=5, font=("Courier New", 7, "bold"), cursor="hand2").pack(anchor="w", pady=(8, 2))
+        tk.Label(
+            data_card, text="As tarefas ficam salvas neste computador.",
+            bg=COLORS["panel"], fg=COLORS["muted"], font=SMALL_FONT
+        ).pack(anchor="w", pady=(2, 5))
+        data_row = tk.Frame(data_card, bg=COLORS["panel"])
+        data_row.pack(fill="x")
+        self.data_folder_var = tk.StringVar(value=str(DB_PATH.parent))
+        data_entry = tk.Entry(
+            data_row, textvariable=self.data_folder_var, font=BODY_FONT,
+            relief="solid", bd=1, state="readonly",
+            readonlybackground=COLORS["panel"], fg=COLORS["text"]
+        )
+        data_entry.pack(side="left", fill="x", expand=True, ipady=4)
+        SoftButton(
+            data_row, text="Abrir", command=self._open_data_folder,
+            width=76, height=28, radius=8,
+            fill=COLORS["neutral"], hover_fill=COLORS["selected"], fg=COLORS["text"],
+            outline=COLORS["border"], font=BUTTON_FONT, compound="center"
+        ).pack(side="left", padx=(6, 0))
+
+    def _choose_png_folder(self):
+        current = str(self.png_folder)
+        selected = filedialog.askdirectory(parent=self, title="Escolher pasta para os PNGs", initialdir=current if Path(current).exists() else str(Path.home()))
+        if not selected:
+            return
+        self.png_folder = Path(selected)
+        self.repo.set_setting("png_folder", str(self.png_folder))
+        if hasattr(self, "png_folder_var"):
+            self.png_folder_var.set(str(self.png_folder))
+
+    def _save_png_folder_from_entry(self, silent=False):
+        if not hasattr(self, "png_folder_var"):
+            return
+        raw = self.png_folder_var.get().strip()
+        if not raw:
+            return
+        folder = Path(raw).expanduser()
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            if not silent:
+                messagebox.showerror("Pasta inválida", f"Não foi possível usar esta pasta.\n\n{exc}", parent=self)
+            return
+        self.png_folder = folder
+        self.repo.set_setting("png_folder", str(folder))
+        self.png_folder_var.set(str(folder))
 
     def _settings_card(self, parent, title, top=0):
         card = tk.Frame(parent, bg=COLORS["panel"], highlightbackground=COLORS["border"], highlightthickness=1, padx=12, pady=10)
         card.pack(fill="x", pady=(top, 0))
-        tk.Label(card, text=title, bg=COLORS["panel"], fg=COLORS["text"], font=("Courier New", 9, "bold")).pack(anchor="w", pady=(0, 4))
+        tk.Label(card, text=title, bg=COLORS["panel"], fg=COLORS["text"], font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(0, 4))
         return card
 
     def _settings_check(self, parent, text, variable, command):
         check = tk.Checkbutton(
             parent, text=text, variable=variable, command=command,
             bg=COLORS["panel"], fg=COLORS["text"], activebackground=COLORS["panel"], activeforeground=COLORS["text"],
-            selectcolor=COLORS["panel"], font=("Segoe UI", 8), cursor="hand2", bd=0, anchor="w"
+            selectcolor=COLORS["panel"], font=BODY_FONT, cursor="hand2", bd=0, anchor="w"
         )
         check.pack(fill="x", anchor="w", pady=3)
         return check

@@ -1,18 +1,18 @@
 # Pine's Journal
 
-Reformulação da identidade visual do aplicativo
+Refinamento de usabilidade antes da versão final
 
-## Evolução
-- navegação por abas;
-- Lista de Tarefas e Calendário integrados;
-- Bloco de Notas para rabiscos rápidos;
-- ferramentas Lápis e Borracha;
-- exportação do bloco como PNG;
-- aba inicial de Configurações;
-- temas visuais e inicialização com o Windows;
-- cabeçalho próprio sem a barra padrão do sistema.
+## Novidades
+- Lista de Tarefas com pesquisa e filtros;
+- filtro visual personalizado;
+- calendário com células uniformes;
+- Bloco de Notas com Lápis, Borracha e Caixa de Texto;
+- pasta configurável para os PNGs;
+- configurações de tema, inicialização com Windows e janela sempre no topo;
+- revisão geral de fontes, posicionamento e controles;
+- organização visual;
 
-## Dependências
+## Instalação
 ```powershell
 py -m pip install -r requirements.txt
 ```
@@ -22,7 +22,7 @@ py -m pip install -r requirements.txt
 py task_app.py
 ```
 
-## Gerar executável
+## Build
 ```text
 build_exe.bat
 ```
