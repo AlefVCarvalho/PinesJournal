@@ -6,7 +6,10 @@ build/
 dist/
 *.spec
 *.db
+*.sqlite
+*.sqlite3
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+PinesJournal_Bloco_*.png

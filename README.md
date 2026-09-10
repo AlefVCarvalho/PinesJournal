@@ -1,15 +1,28 @@
 # Pine's Journal
 
-A base de tarefas foi expandida com datas, calendário e regras de vencimento.
+Reformulação da identidade visual do aplicativo
 
-## Novidades
-- data de conclusão opcional;
-- calendário mensal;
-- tarefas agrupadas por dia;
-- destaque de tarefas atrasadas;
-- exclusão automática de concluídas após 7 dias.
+## Evolução
+- navegação por abas;
+- Lista de Tarefas e Calendário integrados;
+- Bloco de Notas para rabiscos rápidos;
+- ferramentas Lápis e Borracha;
+- exportação do bloco como PNG;
+- aba inicial de Configurações;
+- temas visuais e inicialização com o Windows;
+- cabeçalho próprio sem a barra padrão do sistema.
+
+## Dependências
+```powershell
+py -m pip install -r requirements.txt
+```
 
 ## Executar
 ```powershell
 py task_app.py
+```
+
+## Gerar executável
+```text
+build_exe.bat
 ```
