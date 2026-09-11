@@ -6,7 +6,7 @@ import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import colorchooser, filedialog, messagebox, ttk
 
 from PIL import Image, ImageDraw, ImageFont, ImageTk
 
@@ -228,6 +228,15 @@ def darken(color, amount=0.15):
     return _rgb_to_hex((r * (1 - amount), g * (1 - amount), b * (1 - amount)))
 
 
+def contrast_text_color(color):
+    try:
+        r, g, b = _hex_to_rgb(color)
+    except (TypeError, ValueError):
+        return "#ffffff"
+    luminance = (0.299 * r) + (0.587 * g) + (0.114 * b)
+    return "#1f1f1f" if luminance >= 165 else "#ffffff"
+
+
 class SoftButton(tk.Canvas):
     def __init__(self, master, text="", image=None, command=None, width=90, height=32, radius=10,
                  fill="#ffffff", fg="#111111", hover_fill=None, outline=None, font=BUTTON_FONT,
@@ -351,6 +360,7 @@ class TaskRepository:
     def connect(self):
         con = sqlite3.connect(self.db_path)
         con.row_factory = sqlite3.Row
+        con.execute("PRAGMA foreign_keys = ON")
         return con
 
     def initialize(self):
@@ -371,6 +381,29 @@ class TaskRepository:
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(completed, completed_at)")
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS tags (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                    color TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS task_tags (
+                    task_id INTEGER NOT NULL,
+                    tag_id INTEGER NOT NULL,
+                    PRIMARY KEY(task_id, tag_id),
+                    FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+                    FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_task_tags_tag_id ON task_tags(tag_id)")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS settings (
@@ -418,7 +451,23 @@ class TaskRepository:
         with self.connect() as con:
             return con.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
 
-    def create_task(self, title, description="", due_date=None):
+    def _set_task_tags_with_connection(self, con, task_id, tag_ids):
+        clean_ids = []
+        for value in tag_ids or []:
+            try:
+                tag_id = int(value)
+            except (TypeError, ValueError):
+                continue
+            if tag_id not in clean_ids:
+                clean_ids.append(tag_id)
+        con.execute("DELETE FROM task_tags WHERE task_id = ?", (task_id,))
+        for tag_id in clean_ids:
+            con.execute(
+                "INSERT OR IGNORE INTO task_tags(task_id, tag_id) VALUES(?, ?)",
+                (task_id, tag_id),
+            )
+
+    def create_task(self, title, description="", due_date=None, tag_ids=None):
         now = iso_now()
         with self.connect() as con:
             cur = con.execute(
@@ -428,9 +477,11 @@ class TaskRepository:
                 """,
                 (title.strip(), description.strip(), due_date, now, now),
             )
-            return cur.lastrowid
+            task_id = cur.lastrowid
+            self._set_task_tags_with_connection(con, task_id, tag_ids)
+            return task_id
 
-    def update_task(self, task_id, title, description, due_date):
+    def update_task(self, task_id, title, description, due_date, tag_ids=None):
         with self.connect() as con:
             con.execute(
                 """
@@ -440,6 +491,7 @@ class TaskRepository:
                 """,
                 (title.strip(), description.strip(), due_date, iso_now(), task_id),
             )
+            self._set_task_tags_with_connection(con, task_id, tag_ids)
 
     def set_completed(self, task_id, completed: bool):
         completed_at = iso_now() if completed else None
@@ -456,6 +508,66 @@ class TaskRepository:
     def delete_task(self, task_id):
         with self.connect() as con:
             con.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+
+    def list_tags(self):
+        with self.connect() as con:
+            return con.execute(
+                "SELECT * FROM tags ORDER BY name COLLATE NOCASE ASC"
+            ).fetchall()
+
+    def create_tag(self, name, color):
+        name = (name or "").strip()
+        color = (color or COLORS["accent"]).strip()
+        now = iso_now()
+        with self.connect() as con:
+            cur = con.execute(
+                "INSERT INTO tags(name, color, created_at, updated_at) VALUES(?, ?, ?, ?)",
+                (name, color, now, now),
+            )
+            return cur.lastrowid
+
+    def delete_tag(self, tag_id):
+        with self.connect() as con:
+            con.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
+
+    def get_task_tag_ids(self, task_id):
+        with self.connect() as con:
+            rows = con.execute(
+                "SELECT tag_id FROM task_tags WHERE task_id = ? ORDER BY tag_id",
+                (task_id,),
+            ).fetchall()
+        return [row["tag_id"] for row in rows]
+
+    def get_tags_for_tasks(self, task_ids=None):
+        params = []
+        where = ""
+        if task_ids is not None:
+            clean_ids = []
+            for value in task_ids:
+                try:
+                    clean_ids.append(int(value))
+                except (TypeError, ValueError):
+                    pass
+            if not clean_ids:
+                return {}
+            placeholders = ",".join("?" for _ in clean_ids)
+            where = f"WHERE tt.task_id IN ({placeholders})"
+            params = clean_ids
+        with self.connect() as con:
+            rows = con.execute(
+                f"""
+                SELECT tt.task_id, tg.id, tg.name, tg.color
+                FROM task_tags tt
+                JOIN tags tg ON tg.id = tt.tag_id
+                {where}
+                ORDER BY tg.name COLLATE NOCASE ASC
+                """,
+                params,
+            ).fetchall()
+        result = {}
+        for row in rows:
+            result.setdefault(row["task_id"], []).append(row)
+        return result
 
     def overdue_count(self):
         today = date.today().strftime(DATE_FMT_DB)
@@ -595,7 +707,7 @@ class DatePicker(BorderlessMixin, tk.Toplevel):
         "", "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
         "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
     ]
-    WEEKDAYS = ["S", "T", "Q", "Q", "S", "S", "D"]
+    WEEKDAYS = ["D", "S", "T", "Q", "Q", "S", "S"]
 
     def __init__(self, owner, initial_date=None, on_select=None):
         super().__init__(owner)
@@ -675,7 +787,7 @@ class DatePicker(BorderlessMixin, tk.Toplevel):
             grid.grid_rowconfigure(r, weight=1)
 
         today = date.today()
-        rows = calendar.monthcalendar(self.year, self.month)
+        rows = calendar.Calendar(firstweekday=calendar.SUNDAY).monthdayscalendar(self.year, self.month)
         while len(rows) < 6:
             rows.append([0] * 7)
         for r, week in enumerate(rows, start=1):
@@ -711,7 +823,193 @@ class DatePicker(BorderlessMixin, tk.Toplevel):
         self.destroy()
 
 
+class TagManager(BorderlessMixin, tk.Toplevel):
+    def __init__(self, app, on_close=None):
+        super().__init__(app)
+        self.app = app
+        self.repo = app.repo
+        self.on_close = on_close
+        self.selected_color = COLORS["accent"]
+        self.withdraw()
+        self.geometry("430x460")
+        self.resizable(False, False)
+        self.configure(bg=COLORS["bg"])
+        self.make_borderless()
+        self._build()
+        self._center_over_app()
+        self.deiconify()
+        self.lift()
+        try:
+            self.attributes("-topmost", True)
+            self.grab_set()
+        except tk.TclError:
+            pass
+        self.after(100, self._finish_show)
+        self.bind("<Escape>", lambda _e: self._close())
+
+    def _finish_show(self):
+        if not self.winfo_exists():
+            return
+        try:
+            self.attributes("-topmost", bool(self.app.always_on_top))
+            self.lift()
+            self.name_entry.focus_set()
+        except tk.TclError:
+            pass
+
+    def _center_over_app(self):
+        self.update_idletasks()
+        try:
+            x = self.app.winfo_rootx() + max(0, (self.app.winfo_width() - 430) // 2)
+            y = self.app.winfo_rooty() + max(0, (self.app.winfo_height() - 460) // 2)
+            self.geometry(f"430x460+{x}+{y}")
+        except tk.TclError:
+            pass
+
+    def _build(self):
+        head = tk.Frame(self, bg=COLORS["header"], height=42)
+        head.pack(fill="x")
+        head.pack_propagate(False)
+        title = tk.Label(head, text="Gerenciar tags", bg=COLORS["header"], fg="white", font=SUBSECTION_FONT)
+        title.pack(side="left", padx=14)
+        tk.Button(
+            head, text="×", command=self._close, bg=COLORS["header"], fg="white",
+            activebackground=COLORS["header_hover"], activeforeground="white", relief="flat",
+            bd=0, width=4, cursor="hand2", font=SUBSECTION_FONT
+        ).pack(side="right", fill="y")
+        self.bind_drag(head)
+        self.bind_drag(title)
+
+        create_card = tk.Frame(
+            self, bg=COLORS["panel"], highlightbackground=COLORS["border"],
+            highlightthickness=1, padx=12, pady=10
+        )
+        create_card.pack(fill="x", padx=14, pady=(12, 8))
+        tk.Label(create_card, text="Nova tag", bg=COLORS["panel"], fg=COLORS["text"], font=SUBSECTION_FONT).pack(anchor="w")
+        row = tk.Frame(create_card, bg=COLORS["panel"])
+        row.pack(fill="x", pady=(7, 0))
+        self.name_entry = tk.Entry(row, font=BODY_FONT_LARGE, relief="solid", bd=1)
+        self.name_entry.pack(side="left", fill="x", expand=True, ipady=5)
+        self.name_entry.bind("<Return>", lambda _e: self._create_tag())
+        self.color_button = tk.Button(
+            row, text="Cor", command=self._choose_color, bg=self.selected_color,
+            fg=contrast_text_color(self.selected_color), activebackground=self.selected_color,
+            relief="flat", padx=12, pady=5, cursor="hand2", font=BUTTON_FONT
+        )
+        self.color_button.pack(side="left", padx=(6, 0))
+        tk.Button(
+            row, text="Criar", command=self._create_tag, bg=COLORS["accent"], fg="white",
+            activebackground=COLORS["accent_dark"], activeforeground="white", relief="flat",
+            padx=12, pady=5, cursor="hand2", font=BUTTON_FONT
+        ).pack(side="left", padx=(6, 0))
+
+        tk.Label(
+            self, text="Tags disponíveis", bg=COLORS["bg"], fg=COLORS["muted"],
+            font=("Segoe UI", 8, "bold")
+        ).pack(anchor="w", padx=14, pady=(3, 4))
+        self.tags_frame = ScrollableFrame(self, bg=COLORS["bg"])
+        self.tags_frame.pack(fill="both", expand=True, padx=14, pady=(0, 12))
+        self._render_tags()
+
+    def _choose_color(self):
+        _rgb, hex_color = colorchooser.askcolor(
+            color=self.selected_color, parent=self, title="Escolher cor da tag"
+        )
+        if not hex_color:
+            return
+        self.selected_color = hex_color.lower()
+        self.color_button.configure(
+            bg=self.selected_color, activebackground=self.selected_color,
+            fg=contrast_text_color(self.selected_color)
+        )
+
+    def _create_tag(self):
+        name = self.name_entry.get().strip()
+        if not name:
+            messagebox.showwarning("Nova tag", "Informe um nome para a tag.", parent=self)
+            return
+        if len(name) > 40:
+            messagebox.showwarning("Nova tag", "Use no máximo 40 caracteres no nome da tag.", parent=self)
+            return
+        try:
+            self.repo.create_tag(name, self.selected_color)
+        except sqlite3.IntegrityError:
+            messagebox.showwarning("Nova tag", "Já existe uma tag com esse nome.", parent=self)
+            return
+        self.name_entry.delete(0, "end")
+        self._render_tags()
+        if self.app.current_view == "list":
+            self.app.show_list()
+
+    def _render_tags(self):
+        for child in self.tags_frame.inner.winfo_children():
+            child.destroy()
+        tags = self.repo.list_tags()
+        if not tags:
+            empty = tk.Frame(
+                self.tags_frame.inner, bg=COLORS["panel"],
+                highlightbackground=COLORS["border"], highlightthickness=1
+            )
+            empty.pack(fill="x", pady=3)
+            tk.Label(
+                empty, text="Nenhuma tag criada", bg=COLORS["panel"],
+                fg=COLORS["muted"], font=BODY_FONT_LARGE
+            ).pack(pady=22)
+            return
+        for tag in tags:
+            row = tk.Frame(
+                self.tags_frame.inner, bg=COLORS["panel"],
+                highlightbackground=COLORS["border"], highlightthickness=1
+            )
+            row.pack(fill="x", pady=3)
+            swatch = tk.Label(row, text="  ", bg=tag["color"], width=3)
+            swatch.pack(side="left", padx=(9, 7), pady=8)
+            tk.Label(
+                row, text=tag["name"], bg=COLORS["panel"], fg=COLORS["text"],
+                font=("Segoe UI", 9, "bold"), anchor="w"
+            ).pack(side="left", fill="x", expand=True)
+            tk.Button(
+                row, text="Excluir", command=lambda tid=tag["id"], name=tag["name"]: self._delete_tag(tid, name),
+                bg=COLORS["danger_bg"], fg=COLORS["danger"], activebackground=COLORS["danger_bg"],
+                relief="flat", bd=0, padx=8, pady=4, cursor="hand2", font=SMALL_FONT
+            ).pack(side="right", padx=8, pady=6)
+
+    def _delete_tag(self, tag_id, name):
+        confirmed = messagebox.askyesno(
+            "Excluir tag",
+            f'Excluir a tag "{name}"?\n\nEla será removida das tarefas, mas as tarefas não serão excluídas.',
+            parent=self,
+        )
+        if not confirmed:
+            return
+        self.repo.delete_tag(tag_id)
+        current = str(self.app.task_tag_filter_var.get() or "all")
+        if current == str(tag_id):
+            self.app.task_tag_filter_var.set("all")
+        self._render_tags()
+        if self.app.current_view == "list":
+            self.app.show_list()
+
+    def _close(self):
+        try:
+            self.grab_release()
+        except tk.TclError:
+            pass
+        try:
+            self.destroy()
+        except tk.TclError:
+            pass
+        if self.on_close:
+            try:
+                self.on_close()
+            except tk.TclError:
+                pass
+
+
 class TaskEditor(BorderlessMixin, tk.Toplevel):
+    EDITOR_W = 440
+    EDITOR_H = 570
+
     def __init__(self, app, task_id=None, preset_date=None, on_close=None):
         super().__init__(app)
         self.app = app
@@ -719,8 +1017,10 @@ class TaskEditor(BorderlessMixin, tk.Toplevel):
         self.task_id = task_id
         self.preset_date = preset_date
         self.on_close = on_close
+        self.available_tags = []
+        self.tag_listbox = None
         self.withdraw()
-        self.geometry("420x470")
+        self.geometry(f"{self.EDITOR_W}x{self.EDITOR_H}")
         self.resizable(False, False)
         self.configure(bg=COLORS["bg"])
         self.make_borderless()
@@ -756,9 +1056,9 @@ class TaskEditor(BorderlessMixin, tk.Toplevel):
     def _center_over_app(self):
         self.update_idletasks()
         try:
-            x = self.app.winfo_rootx() + max(0, (self.app.winfo_width() - 420) // 2)
-            y = self.app.winfo_rooty() + max(0, (self.app.winfo_height() - 470) // 2)
-            self.geometry(f"420x470+{x}+{y}")
+            x = self.app.winfo_rootx() + max(0, (self.app.winfo_width() - self.EDITOR_W) // 2)
+            y = self.app.winfo_rooty() + max(0, (self.app.winfo_height() - self.EDITOR_H) // 2)
+            self.geometry(f"{self.EDITOR_W}x{self.EDITOR_H}+{x}+{y}")
         except tk.TclError:
             pass
 
@@ -779,11 +1079,11 @@ class TaskEditor(BorderlessMixin, tk.Toplevel):
 
         tk.Label(body, text="Nome da tarefa *", bg=COLORS["panel"], fg=COLORS["text"], font=("Segoe UI", 8, "bold")).pack(anchor="w")
         self.title_entry = tk.Entry(body, font=("Segoe UI", 10), relief="solid", bd=1)
-        self.title_entry.pack(fill="x", ipady=5, pady=(4, 10))
+        self.title_entry.pack(fill="x", ipady=5, pady=(4, 9))
 
         tk.Label(body, text="Descrição", bg=COLORS["panel"], fg=COLORS["text"], font=("Segoe UI", 8, "bold")).pack(anchor="w")
-        self.desc_text = tk.Text(body, height=7, wrap="word", font=BODY_FONT_LARGE, relief="solid", bd=1)
-        self.desc_text.pack(fill="both", expand=True, pady=(4, 10))
+        self.desc_text = tk.Text(body, height=5, wrap="word", font=BODY_FONT_LARGE, relief="solid", bd=1)
+        self.desc_text.pack(fill="both", expand=True, pady=(4, 9))
 
         tk.Label(body, text="Data de conclusão", bg=COLORS["panel"], fg=COLORS["text"], font=("Segoe UI", 8, "bold")).pack(anchor="w")
         date_row = tk.Frame(body, bg=COLORS["panel"])
@@ -793,7 +1093,28 @@ class TaskEditor(BorderlessMixin, tk.Toplevel):
         self.date_entry.bind("<Double-Button-1>", lambda _e: self._open_date_picker())
         tk.Button(date_row, text="Calendário", command=self._open_date_picker, bg=COLORS["neutral"], fg=COLORS["text"], relief="flat", padx=8, cursor="hand2", font=("Segoe UI", 7, "bold")).pack(side="left", padx=(5, 0), ipady=5)
         tk.Button(date_row, text="×", command=lambda: self.date_entry.delete(0, "end"), bg=COLORS["neutral"], fg=COLORS["muted"], relief="flat", width=3, cursor="hand2", font=SUBSECTION_FONT).pack(side="left", padx=(4, 0), ipady=3)
-        tk.Label(body, text="dd/mm/aaaa", bg=COLORS["panel"], fg=COLORS["muted"], font=SMALL_FONT).pack(anchor="w", pady=(2, 0))
+        tk.Label(body, text="dd/mm/aaaa", bg=COLORS["panel"], fg=COLORS["muted"], font=SMALL_FONT).pack(anchor="w", pady=(2, 8))
+
+        tags_header = tk.Frame(body, bg=COLORS["panel"])
+        tags_header.pack(fill="x")
+        tk.Label(tags_header, text="Tags", bg=COLORS["panel"], fg=COLORS["text"], font=("Segoe UI", 8, "bold")).pack(side="left")
+        tk.Label(tags_header, text="clique para marcar/desmarcar", bg=COLORS["panel"], fg=COLORS["muted"], font=SMALL_FONT).pack(side="right")
+        self.available_tags = list(self.repo.list_tags())
+        self.tag_listbox = tk.Listbox(
+            body, height=4, selectmode=tk.MULTIPLE, exportselection=False,
+            relief="solid", bd=1, font=BODY_FONT_LARGE, activestyle="none"
+        )
+        self.tag_listbox.pack(fill="x", pady=(4, 2))
+        if self.available_tags:
+            for index, tag in enumerate(self.available_tags):
+                self.tag_listbox.insert("end", f'●  {tag["name"]}')
+                try:
+                    self.tag_listbox.itemconfig(index, foreground=tag["color"])
+                except tk.TclError:
+                    pass
+        else:
+            self.tag_listbox.insert("end", "Nenhuma tag criada. Use + Tag na lista de tarefas.")
+            self.tag_listbox.configure(state="disabled")
 
         footer = tk.Frame(self, bg=COLORS["bg"], padx=14, pady=10)
         footer.pack(fill="x", side="bottom")
@@ -812,8 +1133,22 @@ class TaskEditor(BorderlessMixin, tk.Toplevel):
             self.desc_text.insert("1.0", task["description"] or "")
             if task["due_date"]:
                 self.date_entry.insert(0, format_due_date(task["due_date"]))
+            selected_ids = set(self.repo.get_task_tag_ids(self.task_id))
+            if self.tag_listbox is not None and self.available_tags:
+                for index, tag in enumerate(self.available_tags):
+                    if tag["id"] in selected_ids:
+                        self.tag_listbox.selection_set(index)
         elif self.preset_date:
             self.date_entry.insert(0, self.preset_date.strftime(DATE_FMT_UI))
+
+    def _selected_tag_ids(self):
+        if self.tag_listbox is None or not self.available_tags:
+            return []
+        result = []
+        for index in self.tag_listbox.curselection():
+            if 0 <= index < len(self.available_tags):
+                result.append(self.available_tags[index]["id"])
+        return result
 
     def _open_date_picker(self):
         initial = parse_ui_date(self.date_entry.get()) or self.preset_date or date.today()
@@ -827,6 +1162,7 @@ class TaskEditor(BorderlessMixin, tk.Toplevel):
         title = self.title_entry.get().strip()
         description = self.desc_text.get("1.0", "end").strip()
         date_text = self.date_entry.get().strip()
+        tag_ids = self._selected_tag_ids()
         if not title:
             messagebox.showwarning("Campo obrigatório", "Informe o nome da tarefa.", parent=self)
             return
@@ -840,9 +1176,9 @@ class TaskEditor(BorderlessMixin, tk.Toplevel):
             due = parsed.strftime(DATE_FMT_DB)
 
         if self.task_id is None:
-            self.repo.create_task(title, description, due)
+            self.repo.create_task(title, description, due, tag_ids=tag_ids)
         else:
-            self.repo.update_task(self.task_id, title, description, due)
+            self.repo.update_task(self.task_id, title, description, due, tag_ids=tag_ids)
         self.app.refresh_current_view()
         self._close(refresh=False)
 
@@ -871,6 +1207,7 @@ class TaskEditor(BorderlessMixin, tk.Toplevel):
                 self.on_close()
             except tk.TclError:
                 pass
+
 
 
 class TaskApp(BorderlessMixin, tk.Tk):
@@ -914,6 +1251,8 @@ class TaskApp(BorderlessMixin, tk.Tk):
 
         self.task_search_var = tk.StringVar(self, value="")
         self.task_filter_var = tk.StringVar(self, value="Todas")
+        self.task_tag_filter_var = tk.StringVar(self, value="all")
+        self.active_tag_manager = None
         configured_png = self.repo.get_setting("png_folder", str(default_png_dir()))
         self.png_folder = Path(configured_png).expanduser() if configured_png else default_png_dir()
 
@@ -1023,6 +1362,31 @@ class TaskApp(BorderlessMixin, tk.Tk):
 
     def open_new_task(self, preset_date=None, on_close=None):
         return self.open_task_editor(task_id=None, preset_date=preset_date, on_close=on_close)
+
+    def open_tag_manager(self):
+        try:
+            if self.active_tag_manager is not None and self.active_tag_manager.winfo_exists():
+                self.active_tag_manager.lift()
+                self.active_tag_manager.focus_force()
+                return self.active_tag_manager
+        except tk.TclError:
+            self.active_tag_manager = None
+
+        def manager_closed():
+            self.active_tag_manager = None
+            if self.current_view == "list":
+                self.show_list()
+
+        try:
+            manager = TagManager(self, on_close=manager_closed)
+            self.active_tag_manager = manager
+            return manager
+        except Exception as exc:
+            self.active_tag_manager = None
+            messagebox.showerror(
+                "Tags", f"Não foi possível abrir o gerenciador de tags.\n\n{exc}", parent=self
+            )
+            return None
 
     def open_task_editor(self, task_id=None, preset_date=None, on_close=None):
         try:
@@ -1151,12 +1515,18 @@ class TaskApp(BorderlessMixin, tk.Tk):
         header.pack(fill="x", padx=14, pady=(11, 6))
         tk.Label(header, text="Minhas tarefas", bg=COLORS["bg"], fg=COLORS["text"], font=SECTION_FONT).pack(side="left", pady=(5, 0))
         SoftButton(
-            header, text="+ Nova", command=self.open_new_task,
-            width=78, height=30, radius=9,
+            header, text="+ Tarefa", command=self.open_new_task,
+            width=86, height=30, radius=9,
             fill=COLORS["accent"], hover_fill=COLORS["accent_dark"], fg="white",
             outline=darken(COLORS["accent"], 0.18),
             font=BUTTON_FONT, compound="center"
         ).pack(side="right")
+        SoftButton(
+            header, text="+ Tag", command=self.open_tag_manager,
+            width=72, height=30, radius=9,
+            fill=COLORS["panel"], hover_fill=COLORS["selected"], fg=COLORS["text"],
+            outline=COLORS["border"], font=BUTTON_FONT, compound="center"
+        ).pack(side="right", padx=(0, 6))
 
         filter_row = tk.Frame(self.content, bg=COLORS["bg"])
         filter_row.pack(fill="x", padx=14, pady=(0, 7))
@@ -1176,11 +1546,19 @@ class TaskApp(BorderlessMixin, tk.Tk):
             filter_row,
             text=f"{self.task_filter_var.get()}  ▾",
             command=self._open_task_filter_menu,
-            width=118, height=31, radius=9,
+            width=108, height=31, radius=9,
             fill=COLORS["panel"], hover_fill=COLORS["selected"], fg=COLORS["text"],
             outline=COLORS["border"], font=BUTTON_FONT, compound="center"
         )
-        self.task_filter_button.pack(side="right", padx=(7, 0))
+        self.task_filter_button.pack(side="right", padx=(6, 0))
+
+        self.task_tag_filter_button = SoftButton(
+            filter_row, text=f"{self._tag_filter_label()}  ▾",
+            command=self._open_tag_filter_menu, width=122, height=31, radius=9,
+            fill=COLORS["panel"], hover_fill=COLORS["selected"], fg=COLORS["text"],
+            outline=COLORS["border"], font=BUTTON_FONT, compound="center"
+        )
+        self.task_tag_filter_button.pack(side="right", padx=(6, 0))
 
         overdue = self.repo.overdue_count()
         if overdue:
@@ -1221,6 +1599,65 @@ class TaskApp(BorderlessMixin, tk.Tk):
             self.task_filter_button.set_text(f"{value}  ▾")
         self._render_filtered_tasks()
 
+    def _tag_filter_label(self):
+        current = str(self.task_tag_filter_var.get() or "all")
+        if current == "all":
+            return "Todas as tags"
+        if current == "none":
+            return "Sem tag"
+        for tag in self.repo.list_tags():
+            if str(tag["id"]) == current:
+                name = tag["name"]
+                return name if len(name) <= 15 else name[:13] + "…"
+        self.task_tag_filter_var.set("all")
+        return "Todas as tags"
+
+    def _open_tag_filter_menu(self):
+        tags = list(self.repo.list_tags())
+        current = str(self.task_tag_filter_var.get() or "all")
+        valid_ids = {str(tag["id"]) for tag in tags}
+        if current not in {"all", "none"} and current not in valid_ids:
+            current = "all"
+            self.task_tag_filter_var.set("all")
+        menu = tk.Menu(
+            self, tearoff=False, bg=COLORS["panel"], fg=COLORS["text"],
+            activebackground=COLORS["selected"], activeforeground=COLORS["text"],
+            font=BODY_FONT, bd=1, relief="solid"
+        )
+        menu.add_command(
+            label=("✓  Todas as tags" if current == "all" else "    Todas as tags"),
+            command=lambda: self._set_tag_filter("all")
+        )
+        menu.add_command(
+            label=("✓  Sem tag" if current == "none" else "    Sem tag"),
+            command=lambda: self._set_tag_filter("none")
+        )
+        if tags:
+            menu.add_separator()
+        for tag in tags:
+            value = str(tag["id"])
+            prefix = "✓" if value == current else " "
+            menu.add_command(
+                label=f"{prefix}  ● {tag['name']}",
+                foreground=tag["color"],
+                command=lambda selected=value: self._set_tag_filter(selected),
+            )
+        try:
+            x = self.task_tag_filter_button.winfo_rootx()
+            y = self.task_tag_filter_button.winfo_rooty() + self.task_tag_filter_button.winfo_height() + 2
+            menu.tk_popup(x, y)
+        finally:
+            try:
+                menu.grab_release()
+            except tk.TclError:
+                pass
+
+    def _set_tag_filter(self, value):
+        self.task_tag_filter_var.set(str(value))
+        if hasattr(self, "task_tag_filter_button") and self.task_tag_filter_button.winfo_exists():
+            self.task_tag_filter_button.set_text(f"{self._tag_filter_label()}  ▾")
+        self._render_filtered_tasks()
+
     def _render_filtered_tasks(self):
         scroll = getattr(self, "task_scroll", None)
         if scroll is None or not scroll.winfo_exists():
@@ -1229,17 +1666,21 @@ class TaskApp(BorderlessMixin, tk.Tk):
             child.destroy()
 
         tasks = list(self.repo.list_tasks())
+        tags_by_task = self.repo.get_tags_for_tasks([task["id"] for task in tasks])
         query = self.task_search_var.get().strip().lower()
         filter_name = self.task_filter_var.get() or "Todas"
+        tag_filter = str(self.task_tag_filter_var.get() or "all")
         today_db = date.today().strftime(DATE_FMT_DB)
 
         if query:
             filtered = []
             for task in tasks:
+                tag_names = " ".join(tag["name"] for tag in tags_by_task.get(task["id"], []))
                 haystack = " ".join([
                     task["title"] or "",
                     task["description"] or "",
                     format_due_date(task["due_date"]) if task["due_date"] else "",
+                    tag_names,
                 ]).lower()
                 if query in haystack:
                     filtered.append(task)
@@ -1254,11 +1695,26 @@ class TaskApp(BorderlessMixin, tk.Tk):
         elif filter_name == "Sem data":
             tasks = [t for t in tasks if not t["due_date"]]
 
+        if tag_filter == "none":
+            tasks = [t for t in tasks if not tags_by_task.get(t["id"])]
+        elif tag_filter != "all":
+            try:
+                selected_tag_id = int(tag_filter)
+            except ValueError:
+                selected_tag_id = None
+                self.task_tag_filter_var.set("all")
+            if selected_tag_id is not None:
+                tasks = [
+                    t for t in tasks
+                    if any(tag["id"] == selected_tag_id for tag in tags_by_task.get(t["id"], []))
+                ]
+
         if not tasks:
             empty = tk.Frame(scroll.inner, bg=COLORS["panel"], highlightbackground=COLORS["border"], highlightthickness=1)
             empty.pack(fill="x", pady=4)
-            message = "Seu bloco está vazio" if not query and filter_name == "Todas" else "Nenhuma tarefa encontrada"
-            detail = "Use + Nova para criar a primeira tarefa." if message == "Seu bloco está vazio" else "Tente alterar a pesquisa ou o filtro."
+            no_filters = (not query and filter_name == "Todas" and tag_filter == "all")
+            message = "Seu bloco está vazio" if no_filters else "Nenhuma tarefa encontrada"
+            detail = "Use + Tarefa para criar a primeira tarefa." if message == "Seu bloco está vazio" else "Tente alterar a pesquisa ou os filtros."
             tk.Label(empty, text=message, bg=COLORS["panel"], fg=COLORS["text"], font=SUBSECTION_FONT).pack(pady=(28, 4))
             tk.Label(empty, text=detail, bg=COLORS["panel"], fg=COLORS["muted"], font=BODY_FONT).pack(pady=(0, 28))
             return
@@ -1268,11 +1724,11 @@ class TaskApp(BorderlessMixin, tk.Tk):
         if pending:
             self._section_label(scroll.inner, "Pendentes", len(pending))
             for task in pending:
-                self._task_row(scroll.inner, task)
+                self._task_row(scroll.inner, task, task_tags=tags_by_task.get(task["id"], []))
         if completed:
             self._section_label(scroll.inner, "Concluídas", len(completed), top_pad=12)
             for task in completed:
-                self._task_row(scroll.inner, task)
+                self._task_row(scroll.inner, task, task_tags=tags_by_task.get(task["id"], []))
 
     def _section_label(self, parent, text, count, top_pad=0):
         frame = tk.Frame(parent, bg=COLORS["bg"])
@@ -1280,7 +1736,7 @@ class TaskApp(BorderlessMixin, tk.Tk):
         tk.Label(frame, text=text, bg=COLORS["bg"], fg=COLORS["muted"], font=("Segoe UI", 8, "bold")).pack(side="left")
         tk.Label(frame, text=str(count), bg=COLORS["neutral"], fg=COLORS["muted"], font=("Segoe UI", 7, "bold"), padx=6, pady=1).pack(side="left", padx=6)
 
-    def _task_row(self, parent, task, refresh_callback=None, editor_callback=None):
+    def _task_row(self, parent, task, refresh_callback=None, editor_callback=None, task_tags=None):
         completed = bool(task["completed"])
         overdue = bool(task["due_date"] and not completed and task["due_date"] < date.today().strftime(DATE_FMT_DB))
         bg = COLORS["success_bg"] if completed else COLORS["panel"]
@@ -1308,6 +1764,28 @@ class TaskApp(BorderlessMixin, tk.Tk):
             desc = tk.Label(text_frame, text=preview, bg=bg, fg=COLORS["muted"], font=SMALL_FONT, anchor="w", cursor="hand2")
             desc.pack(anchor="w", pady=(1, 0))
 
+        if task_tags is None:
+            task_tags = self.repo.get_tags_for_tasks([task["id"]]).get(task["id"], [])
+        tag_widgets = []
+        if task_tags:
+            tag_frame = tk.Frame(text_frame, bg=bg, cursor="hand2")
+            tag_frame.pack(anchor="w", pady=(4, 0))
+            tag_widgets.append(tag_frame)
+            for tag in task_tags[:4]:
+                pill = tk.Label(
+                    tag_frame, text=tag["name"], bg=tag["color"], fg=contrast_text_color(tag["color"]),
+                    font=("Segoe UI", 7, "bold"), padx=5, pady=1, cursor="hand2"
+                )
+                pill.pack(side="left", padx=(0, 4))
+                tag_widgets.append(pill)
+            if len(task_tags) > 4:
+                more = tk.Label(
+                    tag_frame, text=f"+{len(task_tags) - 4}", bg=COLORS["neutral"], fg=COLORS["muted"],
+                    font=("Segoe UI", 7, "bold"), padx=5, pady=1, cursor="hand2"
+                )
+                more.pack(side="left")
+                tag_widgets.append(more)
+
         due = None
         if task["due_date"]:
             label_bg = COLORS["danger_bg"] if overdue else COLORS["neutral"]
@@ -1317,7 +1795,7 @@ class TaskApp(BorderlessMixin, tk.Tk):
             due.pack(side="right", padx=8)
 
         open_fn = lambda _e, tid=task["id"]: self.open_task_editor(task_id=tid, on_close=editor_callback)
-        for widget in (row, text_frame, title, desc, due):
+        for widget in [row, text_frame, title, desc, due, *tag_widgets]:
             if widget is not None:
                 widget.bind("<Button-1>", open_fn)
 
@@ -1355,14 +1833,14 @@ class TaskApp(BorderlessMixin, tk.Tk):
         for row in range(1, 7):
             grid.grid_rowconfigure(row, weight=0, uniform="week", minsize=66)
 
-        weekdays = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+        weekdays = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"]
         for col, name in enumerate(weekdays):
             tk.Label(grid, text=name, bg=COLORS["panel"], fg=COLORS["muted"], font=("Segoe UI", 7, "bold")).grid(row=0, column=col, sticky="nsew", padx=1, pady=2)
 
         month_names = ["", "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
         self.month_label.configure(text=f"{month_names[self.calendar_month]} {self.calendar_year}")
         counts = self.repo.calendar_counts(self.calendar_year, self.calendar_month)
-        rows = calendar.monthcalendar(self.calendar_year, self.calendar_month)
+        rows = calendar.Calendar(firstweekday=calendar.SUNDAY).monthdayscalendar(self.calendar_year, self.calendar_month)
         while len(rows) < 6:
             rows.append([0] * 7)
         today = date.today()

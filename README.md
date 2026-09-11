@@ -1,71 +1,66 @@
 # Pine's Journal
 
-Aplicativo desktop compacto para Windows que combina **tarefas**, **calendário** e um **bloco de notas visual** em uma única janela local.
+Aplicativo desktop compacto para Windows feito em **Python + Tkinter**, com persistência local em **SQLite** e geração opcional de um único `.exe` com **PyInstaller**.
 
-O projeto é desenvolvido em **Python + Tkinter**, usa **SQLite** para persistência local e pode ser distribuído como um único `.exe` com **PyInstaller**.
+## Alterações desta versão
 
-## Funcionalidades
+- o ícone do aplicativo foi substituído pelo novo `app_icon.ico`, preservando transparência e contendo tamanhos de 16 a 256 px para melhor compatibilidade com o Windows;
+- o calendário principal e o seletor de data agora começam a semana no **domingo**;
+- tarefas podem receber **várias tags**;
+- cada tag possui nome e cor escolhida pelo usuário;
+- o botão `+ Nova` passou a se chamar `+ Tarefa`;
+- foi adicionado o botão `+ Tag` para criar e excluir tags;
+- as tags aparecem visualmente nas tarefas;
+- foi adicionado um filtro independente por tag, incluindo `Todas as tags` e `Sem tag`;
+- a pesquisa também encontra tarefas pelo nome das tags;
 
-### Lista de Tarefas
-- criar, editar, concluir e excluir tarefas;
-- descrição e data de conclusão opcionais;
-- pesquisa por tarefa;
-- filtros por status;
-- destaque de tarefas atrasadas;
-- exclusão automática de concluídas há mais de 7 dias.
+## Arquivos `.bat`
 
-### Calendário
-- visão mensal;
-- dias com tamanho uniforme;
-- indicação de tarefas por data;
-- clique em um dia para visualizar ou criar tarefas.
+```text
+PinesJournal.bat
+```
 
-### Bloco de Notas
-- lápis para rabiscos;
-- borracha que remove o traço inteiro;
-- caixa de texto;
-- cursor de desenho personalizado;
-- exportação para PNG;
-- escolha da pasta padrão de exportação.
+Ao abrir o arquivo, há opções para preparar o ambiente, executar o aplicativo ou gerar o `.exe`. Também é possível chamar diretamente:
 
-### Configurações
-- temas Vinho, Azul, Verde e Grafite;
-- iniciar com o Windows;
-- manter a janela sempre no topo;
-- confirmação antes de excluir tarefas;
-- acesso às pastas de dados e de imagens.
+```text
+PinesJournal.bat setup
+PinesJournal.bat run
+PinesJournal.bat build
+```
 
-## Requisitos para desenvolvimento
-
-- Windows 10/11;
-- Python 3.11 ou superior;
-- Pillow.
-
-## Instalação para desenvolvimento
-
-Clone o repositório e execute:
+### Preparar o ambiente
 
 ```powershell
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 py -m pip install -r requirements-dev.txt
+```
+
+### Executar em desenvolvimento
+
+```powershell
 py task_app.py
 ```
 
-Ou execute `setup_dev.bat` e depois `executar_codigo.bat`.
+### Gerar o executável
 
-## Gerar o executável
-
-Execute:
-
-```text
-build_exe.bat
+```powershell
+py -m PyInstaller --noconfirm --clean --onefile --windowed --name "Pine's Journal" --icon "app_icon.ico" --add-data "app_icon.ico;." --add-data "assets;assets" task_app.py
 ```
 
-O resultado será criado em:
+## Estrutura mínima recomendada do código-fonte
+
+```text
+task_app.py
+app_icon.ico
+requirements.txt
+requirements-dev.txt
+assets\        # somente se quiser usar os ícones auxiliares da interface
+PinesJournal.bat  # opcional
+```
+
+Para o usuário final, depois do build, é possível distribuir somente:
 
 ```text
 dist\Pine's Journal.exe
 ```
-
-O executável é gerado com `--onefile --windowed`, portanto não abre uma janela de terminal durante o uso normal.
